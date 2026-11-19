@@ -329,7 +329,7 @@ function clean(o){
   return {t:String(o.t||'').slice(0,160), c:CAT1[o.c]?o.c:'film', w:!!o.w, s:!!o.s,
     r:Number.isFinite(+o.r)?+o.r:Date.now(), d:/^\d{4}-\d{2}-\d{2}$/.test(o.d||'')?o.d:'',
     n:String(o.n||'').slice(0,200), y:String(o.y||'').slice(0,20), i:String(o.i||'').slice(0,120), g:String(o.g||'').slice(0,60), v:!!o.v, vt:Number(o.vt)||0, a:Number.isFinite(+o.a)?+o.a:Date.now(),
-    ck:Number(o.ck)||0, se:(Number.isInteger(+o.se)&&+o.se>0&&+o.se<200)?+o.se:0, k:(o.k==='s'||o.k==='c')?o.k:'', tm:/^[mt]\d{1,9}$/.test(o.tm||'')?o.tm:'', p:/^\/[\w\-.]{1,80}$/.test(o.p||'')?o.p:''};
+    ck:Number(o.ck)||0, se:(Number.isInteger(+o.se)&&+o.se>0&&+o.se<200)?+o.se:0, k:(o.k==='s'||o.k==='c'||o.k==='n')?o.k:'', tm:/^[mt]\d{1,9}$/.test(o.tm||'')?o.tm:'', p:/^\/[\w\-.]{1,80}$/.test(o.p||'')?o.p:''};
 }
 async function put(id,o,silent){
   o=clean(o); items.set(id,o); if(!silent) render();
@@ -409,11 +409,14 @@ async function movieInfo(id){
 async function refreshFromTMDB(){
   if(refreshing) return; refreshing=true;
   const now=Date.now(), DAY=864e5, TV=['serie','aserie','anime'];
+  const yNow=+today().slice(0,4);
+  // titre peut-être pas encore sorti (année ≥ cette année) mais rangé dans une catégorie normale
+  const maybeUp=o=>!!o.tm&&!o.v&&!UP(o.c)&&o.k!=='n'&&+(((o.y||'').match(/(19|20)\d\d/)||[])[0]||0)>=yNow;
   const todo=[...items.entries()].filter(([,o])=>{
     if(o.ck&&now-o.ck<3*DAY) return false;
-    if(o.tm) return !o.p||!o.y||!o.i||(UP(o.c)&&!o.v&&(!o.d||o.d>=today()));
+    if(o.tm) return !o.p||!o.y||!o.i||(UP(o.c)&&!o.v&&(!o.d||o.d>=today()))||maybeUp(o);
     return !o.p&&!!o.t;
-  }).slice(0,25);
+  }).sort((a,b)=>maybeUp(b[1])-maybeUp(a[1])).slice(0,25);
   let changed=0;
   for(const [id,o] of todo){
     const up={ck:Date.now()};
@@ -437,6 +440,12 @@ async function refreshFromTMDB(){
           else if(!o.y&&y1) up.y=ended?(y2&&y2!==y1?y1+'–'+y2:y1):y1+'–';
           if(!o.i){ const cr=(d.created_by||[]).map(c=>c.name).join(', '); if(cr) up.i=cr; }
           if(!o.se&&o.c==='stream'&&!o.v&&!o.d&&d.first_air_date) up.d=d.first_air_date;
+          if(maybeUp(o)){ // pas encore sortie : la série (ou la saison choisie) part dans « À venir »
+            let fut=false, dd='';
+            if(o.se){ const last=Math.max(0,...(d.seasons||[]).filter(x=>x.season_number>0&&x.air_date&&x.air_date<=today()).map(x=>x.season_number));
+              dd=(sx&&sx.air_date)||''; fut=dd?dd>today():o.se>last; }
+            else { dd=d.first_air_date||''; fut=dd?dd>today():['In Production','Planned','Pilot'].includes(d.status); }
+            if(fut){ up.c='stream'; up.k=''; up.d=dd>today()?dd:''; up.r=lastRank('stream')+1000; } else up.k='n'; }
         } else {
           const m=await movieInfo(tmid.slice(1));
           if(!o.p&&m.d.poster_path) up.p=m.d.poster_path;
@@ -446,6 +455,10 @@ async function refreshFromTMDB(){
           if(UP(o.c)&&!o.v){ const so=o.c==='stream'||(o.k!=='c'&&streamOnly(m.d.release_dates)); if(so&&o.c!=='stream'){ up.c='stream'; up.k=''; up.r=lastRank('stream')+1000; }
             const dd=so?digitalDate(m.d.release_dates):'';
             if(dd){ if(dd!==o.d) up.d=dd; } else if(!o.d&&m.date) up.d=m.date; else if(!so&&m.frDate&&m.frDate!==o.d) up.d=m.frDate; }
+          if(maybeUp(o)){ // pas encore sorti : le film part dans « À venir » (ciné, ou streaming si sortie numérique seulement)
+            const so=streamOnly(m.d.release_dates), rel=(so&&digitalDate(m.d.release_dates))||m.frDate||m.date||m.d.release_date||'';
+            const fut=rel?rel>today():(m.d.status&&m.d.status!=='Released');
+            if(fut){ const c=so?'stream':'cine'; up.c=c; up.k=''; up.d=rel>today()?rel:''; up.r=lastRank(c)+1000; } else up.k='n'; }
         }
       }
     }catch(e){ break; } // relais indisponible : on réessaiera à la prochaine visite
@@ -919,7 +932,7 @@ $('#editForm').onsubmit=async e=>{
   if(editId){
     const o=items.get(editId); if(!o) return;
     const moved=o.c!==fCat, old=rankMap().get(editId);
-    await put(editId,{...o,t,se:/^t/.test(curTm)?fSe:0,c:fCat,k:(o.c==='stream'&&fCat==='cine')?'c':(fCat==='stream'?'':o.k),w:fW,s:fS,d,n,y,i:inf,g,tm:curTm,p:curP,r:moved?lastRank(fCat)+1000:o.r});
+    await put(editId,{...o,t,se:/^t/.test(curTm)?fSe:0,c:fCat,k:(o.c==='stream'&&fCat==='cine')?'c':(fCat==='stream'?'':(UP(o.c)&&!UP(fCat))?'n':o.k),w:fW,s:fS,d,n,y,i:inf,g,tm:curTm,p:curP,r:moved?lastRank(fCat)+1000:o.r});
     if(!UP(fCat)&&!o.v&&pos&&(moved||pos!==old)) moveTo(editId,pos);
     toast('Modifié');
   } else {
