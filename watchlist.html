@@ -277,7 +277,7 @@ body.out .top,body.out main,body.out .add,body.out #sync{display:none}
   <div class="f"><label><span>Saga (facultatif)</span><input type="text" id="fG" maxlength="60" autocomplete="off" placeholder="ex. Star Wars, Spider-Man…"></label><div class="sug" id="sugG" hidden></div></div>
   <div class="f" id="fSeWrap" hidden><span>Saison</span><div class="chips" id="fSe"></div></div>
   <div class="f"><span>Catégorie</span><div class="chips" id="fC"></div></div>
-  <label class="f" id="fDWrap"><span id="fDLbl">Date de sortie au cinéma</span><input type="text" id="fD" inputmode="numeric" maxlength="10" placeholder="jj/mm/aaaa" autocomplete="off"></label>
+  <label class="f" id="fDWrap"><span id="fDLbl">Date de sortie au cinéma</span><input type="text" id="fD" inputmode="numeric" maxlength="10" placeholder="jj/mm/aaaa, mm/aaaa ou aaaa" autocomplete="off"></label>
   <div class="f"><span>Qui veut le regarder</span><div class="chips" id="fWho">
     <button type="button" class="chip on" data-p="s" data-nm="s">S</button><button type="button" class="chip on" data-p="w" data-nm="w">W</button></div></div>
   <label class="f" id="fPosWrap"><span>Place dans le classement</span><input type="number" id="fPos" min="1" inputmode="numeric"></label>
@@ -327,7 +327,7 @@ try{ const u=JSON.parse(localStorage.getItem(LS+'-ui')||'{}'); ['cat','who','sta
 /* ---------- stockage (Supabase) ---------- */
 function clean(o){
   return {t:String(o.t||'').slice(0,160), c:CAT1[o.c]?o.c:'film', w:!!o.w, s:!!o.s,
-    r:Number.isFinite(+o.r)?+o.r:Date.now(), d:/^\d{4}-\d{2}-\d{2}$/.test(o.d||'')?o.d:'',
+    r:Number.isFinite(+o.r)?+o.r:Date.now(), d:/^\d{4}(-\d{2}(-\d{2})?)?$/.test(o.d||'')?o.d:'',
     n:String(o.n||'').slice(0,200), y:String(o.y||'').slice(0,20), i:String(o.i||'').slice(0,120), g:String(o.g||'').slice(0,60), v:!!o.v, vt:Number(o.vt)||0, a:Number.isFinite(+o.a)?+o.a:Date.now(),
     ck:Number(o.ck)||0, se:(Number.isInteger(+o.se)&&+o.se>0&&+o.se<200)?+o.se:0, k:(o.k==='s'||o.k==='c'||o.k==='n')?o.k:'', tm:/^[mt]\d{1,9}$/.test(o.tm||'')?o.tm:'', p:/^\/[\w\-.]{1,80}$/.test(o.p||'')?o.p:''};
 }
@@ -375,7 +375,7 @@ let graduating=false;
 const isoOf=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
 function monthAfter(iso){ const [y,m,d]=iso.split('-').map(Number), x=new Date(y,m,d); if(x.getDate()!==d) x.setDate(0); return isoOf(x); }
 function daysAfter(iso,n){ const [y,m,d]=iso.split('-').map(Number); return isoOf(new Date(y,m-1,d+n)); }
-const leaveDate=o=>o.c==='stream'?daysAfter(o.d,14):monthAfter(o.d);
+const leaveDate=o=>o.c==='stream'?daysAfter(fullD(o.d),14):monthAfter(fullD(o.d));
 async function graduateCine(){
   if(graduating||readOnly||mode!=='db') return; graduating=true;
   const due=[...items.entries()].filter(([,o])=>UP(o.c)&&!o.v&&o.d&&leaveDate(o)<=today()).sort((a,b)=>a[1].d<b[1].d?-1:1);
@@ -416,7 +416,7 @@ async function refreshFromTMDB(){
   const todo=[...items.entries()].filter(([,o])=>{
     if(maybeUp(o)) return true; // à vérifier tout de suite, sans attendre 3 jours
     if(o.ck&&now-o.ck<3*DAY) return false;
-    if(o.tm) return !o.p||!o.y||!o.i||(UP(o.c)&&!o.v&&(!o.d||o.d>=today()))||maybeUp(o);
+    if(o.tm) return !o.p||!o.y||!o.i||(UP(o.c)&&!o.v&&(!o.d||approx(o.d)||o.d>=today()))||maybeUp(o);
     return !o.p&&!!o.t;
   }).sort((a,b)=>maybeUp(b[1])-maybeUp(a[1])).slice(0,25);
   let changed=0;
@@ -441,7 +441,7 @@ async function refreshFromTMDB(){
           if(!o.y&&o.se&&sx&&sx.air_date) up.y=yearOf(sx.air_date);
           else if(!o.y&&y1) up.y=ended?(y2&&y2!==y1?y1+'–'+y2:y1):y1+'–';
           if(!o.i){ const cr=(d.created_by||[]).map(c=>c.name).join(', '); if(cr) up.i=cr; }
-          if(!o.se&&o.c==='stream'&&!o.v&&!o.d&&d.first_air_date) up.d=d.first_air_date;
+          if(!o.se&&o.c==='stream'&&!o.v&&(!o.d||approx(o.d))&&d.first_air_date) up.d=d.first_air_date;
           if(maybeUp(o)){ // pas encore sortie : la série (ou la saison choisie) part dans « À venir »
             let fut=false, dd='';
             if(o.se){ const last=Math.max(0,...(d.seasons||[]).filter(x=>x.season_number>0&&x.air_date&&x.air_date<=today()).map(x=>x.season_number));
@@ -456,7 +456,7 @@ async function refreshFromTMDB(){
           // ciné : date vide → date TMDB ; date déjà mise → remplacée seulement par la date officielle de sortie en France
           if(UP(o.c)&&!o.v){ const so=o.c==='stream'||(o.k!=='c'&&streamOnly(m.d.release_dates)); if(so&&o.c!=='stream'){ up.c='stream'; up.k=''; up.r=lastRank('stream')+1000; }
             const dd=so?digitalDate(m.d.release_dates):'';
-            if(dd){ if(dd!==o.d) up.d=dd; } else if(!o.d&&m.date) up.d=m.date; else if(!so&&m.frDate&&m.frDate!==o.d) up.d=m.frDate; }
+            if(dd){ if(dd!==o.d) up.d=dd; } else if((!o.d||approx(o.d))&&m.date) up.d=m.date; else if(!so&&m.frDate&&m.frDate!==o.d) up.d=m.frDate; }
           if(maybeUp(o)){ // pas encore sorti : le film part dans « À venir » (ciné, ou streaming si sortie numérique seulement)
             const so=streamOnly(m.d.release_dates), rel=(so&&digitalDate(m.d.release_dates))||m.frDate||m.date||m.d.release_date||'';
             const fut=rel?rel>today():(m.d.status&&m.d.status!=='Released');
@@ -507,12 +507,27 @@ async function init(){
 }
 /* ---------- helpers ---------- */
 const tmdbUrl=(tm,se)=>'https://www.themoviedb.org/'+(tm[0]==='t'?'tv':'movie')+'/'+tm.slice(1)+(tm[0]==='t'&&se?'/season/'+se:'')+'?language=fr-FR';
-const isoToFr=s=>/^\d{4}-\d{2}-\d{2}$/.test(s||'')?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):'';
-function frToIso(s){ const m=(s||'').trim().match(/^(\d{1,2})[\/.\- ](\d{1,2})[\/.\- ](\d{4})$/); if(!m) return '';
+/* dates de sortie : précise (2027-02-14), au mois (2027-02) ou à l'année (2027) */
+const isoToFr=s=>/^\d{4}-\d{2}-\d{2}$/.test(s||'')?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):/^\d{4}-\d{2}$/.test(s||'')?s.slice(5,7)+'/'+s.slice(0,4):/^\d{4}$/.test(s||'')?s:'';
+const approx=s=>!!s&&s.length<10;
+// dernier jour possible de la période (sert à savoir si c'est sorti)
+const fullD=s=>!s?'':s.length===4?s+'-12-31':s.length===7?(()=>{ const [y,m]=s.split('-').map(Number); return s+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0'); })():s;
+function frToIso(s){ const m=(s||'').trim().match(/^(\d{1,2})[\/.\- ](\d{1,2})[\/.\- ](\d{4})$/);
+  if(!m){ const g=(s||'').replace(/\D/g,'');
+    if(g.length===6&&+g.slice(0,2)>=1&&+g.slice(0,2)<=12&&/^(19|20)/.test(g.slice(2))) return g.slice(2)+'-'+g.slice(0,2); // mm/aaaa
+    if(g.length===4&&/^(19|20)/.test(g)) return g; // aaaa
+    return ''; }
   const d=+m[1], mo=+m[2], y=+m[3], dt=new Date(y,mo-1,d); if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d) return '';
   return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
 const today=()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 function dinfo(s){
+  if(approx(s)){ const [y,m]=s.split('-').map(Number), t=new Date(); t.setHours(0,0,0,0);
+    const end=new Date(...fullD(s).split('-').map((v,i)=>i===1?+v-1:+v)), start=m?new Date(y,m-1,1):new Date(y,0,1);
+    const mo=m?start.toLocaleDateString('fr-FR',{month:'short'}).replace('.',''):'';
+    const months=(start.getFullYear()-t.getFullYear())*12+start.getMonth()-t.getMonth();
+    return {day:m?mo:String(y), mon:m?String(y):'', full:m?start.toLocaleDateString('fr-FR',{month:'long',year:'numeric'}):'en '+y,
+      rel: end<t?'déjà sorti':start<=t?(m?'ce mois-ci':'cette année'):months<=1?'le mois prochain':m?`dans ${months} mois`:`dans ${y-t.getFullYear()} an${y-t.getFullYear()>1?'s':''}`,
+      out:end<t, approx:true}; }
   const [y,m,d]=s.split('-').map(Number); const dt=new Date(y,m-1,d); const t=new Date(); t.setHours(0,0,0,0);
   const diff=Math.round((dt-t)/86400000);
   return {day:d, mon:dt.toLocaleDateString('fr-FR',{month:'short'}).replace('.',''), full:dt.toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}),
@@ -520,7 +535,7 @@ function dinfo(s){
 }
 function cmp(a,b){
   const A=a[1],B=b[1];
-  if(UP(A.c)&&A.c===B.c){ const x=A.d||'9999', y=B.d||'9999'; if(x!==y) return x<y?-1:1; }
+  if(UP(A.c)&&A.c===B.c){ const x=!A.d?'9999':A.d.length===4?A.d+'-13':A.d, y=!B.d?'9999':B.d.length===4?B.d+'-13':B.d; if(x!==y) return x<y?-1:1; }
   return A.r-B.r || A.a-B.a;
 }
 const todoOf=c=>[...items.entries()].filter(([,o])=>o.c===c&&!o.v).sort(cmp);
@@ -543,9 +558,9 @@ let lastMoved=null;
 const FOLDED=new Set();
 
 /* ---------- sorties à venir : frise et mois ---------- */
-function monthLabel(iso){ const [y,m]=iso.split('-').map(Number); const t=new Date(y,m-1,1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase()+t.slice(1); }
+function monthLabel(iso){ if(iso.length===4) return iso+' · mois à préciser'; const [y,m]=iso.split('-').map(Number); const t=new Date(y,m-1,1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase()+t.slice(1); }
 function stripHtml(){
-  const up=[...items.entries()].filter(([,o])=>UP(o.c)&&!o.v&&whoOk(o)&&(!o.d||o.d>=today())).sort((a,b)=>{ const x=a[1].d||'9999', y=b[1].d||'9999'; return x<y?-1:x>y?1:0; });
+  const up=[...items.entries()].filter(([,o])=>UP(o.c)&&!o.v&&whoOk(o)&&(!o.d||fullD(o.d)>=today())).sort((a,b)=>{ const x=!a[1].d?'9999':a[1].d.length===4?a[1].d+'-13':a[1].d, y=!b[1].d?'9999':b[1].d.length===4?b[1].d+'-13':b[1].d; return x<y?-1:x>y?1:0; });
   if(!up.length) return '';
   return `<div class="strip-h"><span>Prochaines sorties</span><button data-goup>Tout voir ›</button></div><div class="stripw"><button class="sarr l" data-sarr="-1" aria-label="Défiler vers la gauche" hidden>‹</button><button class="sarr r" data-sarr="1" aria-label="Défiler vers la droite">›</button><div class="strip">`+up.map(([id,o])=>{
     let cd; if(!o.d) cd='date à venir'; else { const di=dinfo(o.d); cd=di.out?(di.rel==='aujourd’hui'?'aujourd’hui':'sorti'):di.rel.replace('dans ','dans ').replace(' jours',' j'); }
@@ -556,7 +571,7 @@ function stripHtml(){
 /* sorties récentes : déjà sorties mais encore dans À venir (1 mois pour le ciné, 2 semaines pour le streaming) */
 function recentHtml(){
   const t=today();
-  const rec=[...items.entries()].filter(([,o])=>UP(o.c)&&!o.v&&whoOk(o)&&o.d&&o.d<=t).sort((a,b)=>a[1].d<b[1].d?1:a[1].d>b[1].d?-1:0);
+  const rec=[...items.entries()].filter(([,o])=>UP(o.c)&&!o.v&&whoOk(o)&&o.d&&!approx(o.d)&&o.d<=t).sort((a,b)=>a[1].d<b[1].d?1:a[1].d>b[1].d?-1:0);
   if(!rec.length) return '';
   const lab=d=>{ const n=Math.round((new Date(t)-new Date(d))/864e5); return n===0?'aujourd’hui':n===1?'hier':'il y a '+n+' j'; };
   return `<div class="strip-h small"><span>Sorties récentes</span></div><div class="stripw"><button class="sarr l" data-sarr="-1" aria-label="Défiler vers la gauche" hidden>‹</button><button class="sarr r" data-sarr="1" aria-label="Défiler vers la droite">›</button><div class="strip sm">`+rec.map(([id,o])=>{
@@ -580,11 +595,11 @@ function render(){
   const rk=rankMap(), q=norm(st.q.trim());
   const isUp=st.cat==='up', inCat=o=>isUp ? UP(o.c)&&(st.upf==='all'||o.c===st.upf) : st.cat==='all' ? (!UP(o.c)||!!q) : o.c===st.cat;
   let rows=[...items.entries()].filter(([,o])=>o.v===(st.status==='seen')&&whoOk(o)&&inCat(o)&&(!q||norm(o.t+' '+o.n+' '+o.y+' '+o.i+' '+o.g).includes(q)));
-  const upCmp=(a,b)=>{ const x=a[1].d||'9999', y=b[1].d||'9999'; return x<y?-1:x>y?1:cmp(a,b); };
+  const sk=d=>!d?'9999':d.length===4?d+'-13':d; const upCmp=(a,b)=>{ const x=sk(a[1].d), y=sk(b[1].d); return x<y?-1:x>y?1:cmp(a,b); };
   rows.sort((a,b)=> isUp ? upCmp(a,b) : st.cat==='all' ? (CATORDER.indexOf(a[1].c)-CATORDER.indexOf(b[1].c))||(UP(a[1].c)?upCmp(a,b):cmp(a,b)) : cmp(a,b));
   if(st.status==='seen') rows.sort((a,b)=>(b[1].vt||0)-(a[1].vt||0)||cmp(a,b));
   let html='', last=null;
-  const gkey=o=> isUp ? 'm:'+(o.d?o.d.slice(0,7):'zz') : (UP(o.c)?'up':o.c);
+  const gkey=o=> isUp ? 'm:'+(o.d?(o.d.length===4?o.d+'-zz':o.d.slice(0,7)):'zz') : (UP(o.c)?'up':o.c);
   const gcnt={}; if(st.cat==='all'||(isUp&&st.status==='todo')) rows.forEach(([,o])=>{ const k=gkey(o); gcnt[k]=(gcnt[k]||0)+1; });
   const ghead=(k,label)=>{ const f=FOLDED.has(k); return `<div class="grp${f?' folded':''}" data-fold="${k}"><button class="fold" aria-expanded="${!f}" aria-label="${f?'Déplier':'Replier'} ${esc(label)}">▾</button><span class="gl">${esc(label)}</span><span class="gn">${gcnt[k]||0}</span></div>`; };
   if(isUp){ const uc={all:0,cine:0,stream:0}; items.forEach(o=>{ if(UP(o.c)&&o.v===(st.status==='seen')&&whoOk(o)){ uc.all++; uc[o.c]++; } });
@@ -592,7 +607,7 @@ function render(){
   else if(st.cat==='all'&&st.status==='todo'&&!q) html+=stripHtml()+recentHtml();
   rows.forEach(([id,o],i)=>{
     let gk=null;
-    if(isUp&&st.status==='todo'){ gk=gkey(o); if(gk!==last){ html+=ghead(gk,o.d?monthLabel(o.d):'Date à venir'); last=gk; } }
+    if(isUp&&st.status==='todo'){ gk=gkey(o); if(gk!==last){ html+=ghead(gk,o.d?monthLabel(o.d.length===4?o.d:o.d.slice(0,7)):'Date à venir'); last=gk; } }
     else if(st.cat==='all'&&!isUp){ gk=gkey(o); if(gk!==last){ html+=ghead(gk,gk==='up'?'À venir':CATL[o.c]); last=gk; } }
     if(gk&&FOLDED.has(gk)) return;
     let rkHtml, meta=[];
@@ -613,7 +628,7 @@ function render(){
       ${o.p?`<img class="pst" src="https://image.tmdb.org/t/p/w92${o.p}" alt="" loading="lazy">`:`<div class="pst none">${esc((o.t||'?').charAt(0))}</div>`}
       <div class="main"><div class="ttl">${esc(o.t)}</div>${meta.length?`<div class="meta">${meta.join(' · ')}</div>`:''}</div>
       <div class="who"><button class="${o.s?'on':''}" data-p="s" aria-label="${esc(NAMES.s||'S')}">S</button><button class="${o.w?'on':''}" data-p="w" aria-label="${esc(NAMES.w||'W')}">W</button></div>
-      <button class="seen-btn" data-seen aria-label="${o.v?'Remettre à voir':'Marquer comme vu'}" ${(!o.v&&UP(o.c)&&o.d&&o.d>today())?'disabled title="Pas encore sorti"':''}>✓</button>
+      <button class="seen-btn" data-seen aria-label="${o.v?'Remettre à voir':'Marquer comme vu'}" ${(!o.v&&UP(o.c)&&o.d&&!approx(o.d)&&o.d>today())?'disabled title="Pas encore sorti"':''}>✓</button>
       <button class="dots" aria-label="Options">⋯</button>
       <div class="arrows"><button data-mv="-1" aria-label="Monter" ${r===1?'disabled':''}>↑</button><button data-mv="1" aria-label="Descendre" ${r===n?'disabled':''}>↓</button></div>
     </div>`;
@@ -915,7 +930,10 @@ $('#editDlg').addEventListener('close',hideSug);
 document.addEventListener('pointerdown',e=>{ if(!e.target.closest('#sugT,#fT')) $('#sugT').hidden=true; if(!e.target.closest('#sugG,#fG')) $('#sugG').hidden=true; });
 
 $('#fD').addEventListener('input',e=>{ if(e.inputType&&e.inputType.startsWith('delete')) return;
-  const v=$('#fD').value.replace(/\D/g,'').slice(0,8); $('#fD').value=v.length>4?v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4):v.length>2?v.slice(0,2)+'/'+v.slice(2):v; });
+  const v=$('#fD').value.replace(/\D/g,'').slice(0,8), yr=x=>/^(19|20)\d\d$/.test(x);
+  // aaaa seule, ou mm/aaaa, sinon jj/mm/aaaa
+  $('#fD').value=v.length===4&&yr(v)?v : v.length===6&&+v.slice(0,2)>=1&&+v.slice(0,2)<=12&&yr(v.slice(2))?v.slice(0,2)+'/'+v.slice(2)
+    : v.length>4?v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4):v.length>2?v.slice(0,2)+'/'+v.slice(2):v; });
 $('#cancelBtn').onclick=()=>$('#editDlg').close();
 $('#delBtn').onclick=()=>{
   const o=items.get(editId); if(!o) return;
@@ -926,7 +944,7 @@ $('#editForm').onsubmit=async e=>{
   e.preventDefault();
   const t=$('#fT').value.trim(); if(!t) return $('#fT').focus();
   const dRaw=$('#fD').value.trim(), d=UP(fCat)?frToIso(dRaw):'';
-  if(UP(fCat)&&dRaw&&!d){ toast('Date invalide : écris-la en jj/mm/aaaa'); $('#fD').focus(); return; }
+  if(UP(fCat)&&dRaw&&!d){ toast('Date invalide : jj/mm/aaaa, ou mm/aaaa si on ne connaît que le mois, ou aaaa'); $('#fD').focus(); return; }
   const n=$('#fN').value.trim(), y=$('#fY').value.trim(), inf=$('#fI').value.trim(), g=$('#fG').value.trim(), pos=parseInt($('#fPos').value,10);
   const dup=findDup(curTm,/^t/.test(curTm)?fSe:0,t,editId);
   if(dup){ toast('« '+dup.t+' » est déjà dans la liste'+(dup.v?' (déjà vu)':'')+(/^t/.test(curTm)&&!editId?' : choisis une autre saison':'')); return; }
