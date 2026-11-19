@@ -411,8 +411,10 @@ async function refreshFromTMDB(){
   const now=Date.now(), DAY=864e5, TV=['serie','aserie','anime'];
   const yNow=+today().slice(0,4);
   // titre peut-être pas encore sorti (année ≥ cette année) mais rangé dans une catégorie normale
-  const maybeUp=o=>!!o.tm&&!o.v&&!UP(o.c)&&o.k!=='n'&&+(((o.y||'').match(/(19|20)\d\d/)||[])[0]||0)>=yNow;
+  // (année inconnue = peut-être pas encore annoncée : on vérifie aussi) ; chaque titre n'est vérifié qu'une fois (k='n' ensuite)
+  const maybeUp=o=>{ if(!o.tm||o.v||UP(o.c)||o.k==='n') return false; const yy=((o.y||'').match(/(19|20)\d\d/g)||[]); return !yy.length||+yy[0]>=yNow; };
   const todo=[...items.entries()].filter(([,o])=>{
+    if(maybeUp(o)) return true; // à vérifier tout de suite, sans attendre 3 jours
     if(o.ck&&now-o.ck<3*DAY) return false;
     if(o.tm) return !o.p||!o.y||!o.i||(UP(o.c)&&!o.v&&(!o.d||o.d>=today()))||maybeUp(o);
     return !o.p&&!!o.t;
