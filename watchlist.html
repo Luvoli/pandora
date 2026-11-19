@@ -112,7 +112,12 @@ h1{font:400 52px/0.85 var(--disp);letter-spacing:.01em;margin:0}
 .strip.sm ~ .sarr,.stripw:has(.strip.sm) .sarr{top:44px}
 .sc b{display:block;font-weight:600;font-size:12.5px;line-height:1.25;margin-top:7px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .sc small{color:var(--mut);font-size:11.5px}
-.grp{font:400 24px/1 var(--disp);letter-spacing:.03em;padding:20px 0 8px;border-bottom:1px solid var(--line)}
+.grp{font:400 24px/1 var(--disp);letter-spacing:.03em;padding:20px 0 8px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.grp .fold{flex:none;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:transparent;color:var(--mut);font-size:14px;line-height:1;display:grid;place-items:center;padding:0;transition:transform .2s}
+.grp:hover .fold{color:var(--ink);border-color:var(--mut)}
+.grp.folded .fold{transform:rotate(-90deg)}
+.grp .gn{font:600 13px var(--body);color:var(--mut);letter-spacing:0;margin-left:2px}
+.grp.folded{color:var(--mut)}
 .row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);background:transparent;position:relative}
 .row.seen .ttl{text-decoration:line-through;text-decoration-thickness:1.5px;color:var(--mut)}
 .rk{flex:0 0 46px;font:400 34px/0.9 var(--disp);text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -519,6 +524,9 @@ function moveTo(id,pos){
 }
 let lastMoved=null;
 
+/* volets repliables (en mémoire : tout se rouvre au rechargement) */
+const FOLDED=new Set();
+
 /* ---------- sorties à venir : frise et mois ---------- */
 function monthLabel(iso){ const [y,m]=iso.split('-').map(Number); const t=new Date(y,m-1,1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase()+t.slice(1); }
 function stripHtml(){
@@ -561,12 +569,17 @@ function render(){
   rows.sort((a,b)=> isUp ? upCmp(a,b) : st.cat==='all' ? (CATORDER.indexOf(a[1].c)-CATORDER.indexOf(b[1].c))||(UP(a[1].c)?upCmp(a,b):cmp(a,b)) : cmp(a,b));
   if(st.status==='seen') rows.sort((a,b)=>(b[1].vt||0)-(a[1].vt||0)||cmp(a,b));
   let html='', last=null;
+  const gkey=o=> isUp ? 'm:'+(o.d?o.d.slice(0,7):'zz') : (UP(o.c)?'up':o.c);
+  const gcnt={}; if(st.cat==='all'||(isUp&&st.status==='todo')) rows.forEach(([,o])=>{ const k=gkey(o); gcnt[k]=(gcnt[k]||0)+1; });
+  const ghead=(k,label)=>{ const f=FOLDED.has(k); return `<div class="grp${f?' folded':''}" data-fold="${k}"><button class="fold" aria-expanded="${!f}" aria-label="${f?'Déplier':'Replier'} ${esc(label)}">▾</button><span class="gl">${esc(label)}</span><span class="gn">${gcnt[k]||0}</span></div>`; };
   if(isUp){ const uc={all:0,cine:0,stream:0}; items.forEach(o=>{ if(UP(o.c)&&o.v===(st.status==='seen')&&whoOk(o)){ uc.all++; uc[o.c]++; } });
     html+=`<div class="upf">${[['all','Tout'],['cine','Cinéma'],['stream','Streaming']].map(([k,l])=>`<button class="${st.upf===k?'on':''}" data-upf="${k}">${l}<sup>${uc[k]}</sup></button>`).join('')}</div>`; }
   else if(st.cat==='all'&&st.status==='todo'&&!q) html+=stripHtml()+recentHtml();
   rows.forEach(([id,o],i)=>{
-    if(isUp&&st.status==='todo'){ const mk=o.d?o.d.slice(0,7):'zz'; if(mk!==last){ html+=`<div class="grp">${o.d?monthLabel(o.d):'Date à venir'}</div>`; last=mk; } }
-    else if(st.cat==='all'&&!isUp){ const g=UP(o.c)?'up':o.c; if(g!==last){ html+=`<div class="grp">${g==='up'?'À venir':CATL[o.c]}</div>`; last=g; } }
+    let gk=null;
+    if(isUp&&st.status==='todo'){ gk=gkey(o); if(gk!==last){ html+=ghead(gk,o.d?monthLabel(o.d):'Date à venir'); last=gk; } }
+    else if(st.cat==='all'&&!isUp){ gk=gkey(o); if(gk!==last){ html+=ghead(gk,gk==='up'?'À venir':CATL[o.c]); last=gk; } }
+    if(gk&&FOLDED.has(gk)) return;
     let rkHtml, meta=[];
     if(o.v) rkHtml=`<div class="rk check">✓</div>`;
     else if(UP(o.c)&&o.d){ const di=dinfo(o.d); rkHtml=`<div class="rk date">${di.day}<small>${di.mon}</small></div>`;
@@ -603,6 +616,7 @@ function goTab(cat,keep){ if(cat===st.cat&&!keep){ return; } tabScroll[st.cat]=s
 $('#tabs').onclick=e=>{ const b=e.target.closest('.tab'); if(b) goTab(b.dataset.k); };
 $('#upTab').onclick=()=>goTab('up');
 $('#list').addEventListener('click',e=>{
+  const fo=e.target.closest('[data-fold]'); if(fo){ const k=fo.dataset.fold; if(FOLDED.has(k)) FOLDED.delete(k); else FOLDED.add(k); const y=fo.getBoundingClientRect().top; render(); const n=$('#list').querySelector(`[data-fold="${k}"]`); if(n){ scrollBy(0,n.getBoundingClientRect().top-y); n.querySelector('.fold').focus({preventScroll:true}); } return; }
   const f=e.target.closest('[data-upf]'); if(f){ st.upf=f.dataset.upf; render(); return; }
   const a=e.target.closest('[data-sarr]'); if(a){ e.stopPropagation(); const sc=a.parentNode.querySelector('.strip'); sc.scrollBy({left:+a.dataset.sarr*Math.max(240,sc.clientWidth*.8),behavior:'smooth'}); return; }
   const go=e.target.closest('[data-goto]'); if(go){ e.stopPropagation(); const id=go.dataset.goto, o=items.get(id); if(!o) return; if(UP(o.c)) st.upf='all'; goTab(UP(o.c)?'up':o.c,true); scrollTo({top:0});

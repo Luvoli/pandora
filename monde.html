@@ -83,6 +83,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-o
 
 /* Sections */
 section{display:flex;flex-direction:column;gap:10px}
+.sechead .fold{flex:none;align-self:center;width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.04);color:inherit;font-size:15px;line-height:1;display:grid;place-items:center;padding:0;cursor:pointer;transition:transform .2s;margin-right:-4px}
+.sechead .fold:hover{background:rgba(255,255,255,.1)}
+.sechead h2{cursor:pointer;flex:1;min-width:0}
+.group.folded .sechead .fold{transform:rotate(-90deg)}
+.group.folded > :not(.sechead){display:none}
+.group.folded{padding-bottom:4px}
 .sechead{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--line);position:relative}
 .sechead::after{content:"";position:absolute;left:0;bottom:-1px;width:64px;height:2px;background:linear-gradient(90deg,var(--gold),var(--rose));border-radius:2px}
 h2{font-size:1.75rem;font-weight:600;color:#fff4e4;line-height:1.1}
@@ -740,10 +746,17 @@ function render(){
   if (justId) { const n = document.querySelector('[data-id="' + CSS.escape(justId) + '"] input'); if (n) n.classList.add("just"); justId = null; }
   if (C.afterRender) C.afterRender();
 }
+/* volets repliables : en mémoire seulement, tout se rouvre au rechargement */
+const FOLDED = new Set();
 function renderGroup(g, its, d, gi, pi, peers){
-  const s = el("section", "group st-" + g.status); s.dataset.g = g.id;
+  const folded = FOLDED.has(g.id);
+  const s = el("section", "group st-" + g.status + (folded ? " folded" : "")); s.dataset.g = g.id;
   const head = el("div", "sechead");
-  const h = el("h2");
+  const fold = btn("fold", "▾", (folded ? "Déplier " : "Replier ") + g.t); fold.setAttribute("aria-expanded", folded ? "false" : "true");
+  const toggle = () => { if (FOLDED.has(g.id)) FOLDED.delete(g.id); else FOLDED.add(g.id); render(); const b = document.querySelector('section.group[data-g="' + CSS.escape(g.id) + '"] .fold'); if (b) b.focus(); };
+  fold.addEventListener("click", toggle);
+  head.appendChild(fold);
+  const h = el("h2"); h.addEventListener("click", toggle); h.title = folded ? "Déplier" : "Replier";
   if (C.flags && g.flag) h.appendChild(flagNode(g.flag, "flag"));
   h.appendChild(el("span", "gt", g.t));
   head.appendChild(h);
