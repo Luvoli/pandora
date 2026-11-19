@@ -327,7 +327,7 @@ try{ const u=JSON.parse(localStorage.getItem(LS+'-ui')||'{}'); ['cat','who','sta
 /* ---------- stockage (Supabase) ---------- */
 function clean(o){
   return {t:String(o.t||'').slice(0,160), c:CAT1[o.c]?o.c:'film', w:!!o.w, s:!!o.s,
-    r:Number.isFinite(+o.r)?+o.r:Date.now(), d:/^\d{4}(-\d{2}(-\d{2})?)?$/.test(o.d||'')?o.d:'',
+    r:Number.isFinite(+o.r)?+o.r:Date.now(), d:/^\d{4}(-\d{2}(-\d{2})?)?$/.test(o.d||'')?fullD(o.d):'', de:(o.de||/^\d{4}(-\d{2})?$/.test(o.d||''))?1:0,
     n:String(o.n||'').slice(0,200), y:String(o.y||'').slice(0,20), i:String(o.i||'').slice(0,120), g:String(o.g||'').slice(0,60), v:!!o.v, vt:Number(o.vt)||0, a:Number.isFinite(+o.a)?+o.a:Date.now(),
     ck:Number(o.ck)||0, se:(Number.isInteger(+o.se)&&+o.se>0&&+o.se<200)?+o.se:0, k:(o.k==='s'||o.k==='c'||o.k==='n')?o.k:'', tm:/^[mt]\d{1,9}$/.test(o.tm||'')?o.tm:'', p:/^\/[\w\-.]{1,80}$/.test(o.p||'')?o.p:''};
 }
@@ -416,7 +416,7 @@ async function refreshFromTMDB(){
   const todo=[...items.entries()].filter(([,o])=>{
     if(maybeUp(o)) return true; // à vérifier tout de suite, sans attendre 3 jours
     if(o.ck&&now-o.ck<3*DAY) return false;
-    if(o.tm) return !o.p||!o.y||!o.i||(UP(o.c)&&!o.v&&(!o.d||approx(o.d)||o.d>=today()))||maybeUp(o);
+    if(o.tm) return !o.p||!o.y||!o.i||(UP(o.c)&&!o.v&&(!o.d||o.de||o.d>=today()))||maybeUp(o);
     return !o.p&&!!o.t;
   }).sort((a,b)=>maybeUp(b[1])-maybeUp(a[1])).slice(0,25);
   let changed=0;
@@ -436,12 +436,12 @@ async function refreshFromTMDB(){
           const d=await tmdb('/tv/'+tmid.slice(1));
           const sx=o.se?(d.seasons||[]).find(x=>x.season_number===o.se):null;
           if(!o.p&&((sx&&sx.poster_path)||d.poster_path)) up.p=(sx&&sx.poster_path)||d.poster_path;
-          if(sx&&o.c==='stream'&&!o.v&&sx.air_date&&sx.air_date!==o.d) up.d=sx.air_date;
+          if(sx&&o.c==='stream'&&!o.v&&sx.air_date&&(sx.air_date!==o.d||o.de)){ up.d=sx.air_date; up.de=0; }
           const y1=yearOf(d.first_air_date), y2=yearOf(d.last_air_date), ended=d.status==='Ended'||d.status==='Canceled';
           if(!o.y&&o.se&&sx&&sx.air_date) up.y=yearOf(sx.air_date);
           else if(!o.y&&y1) up.y=ended?(y2&&y2!==y1?y1+'–'+y2:y1):y1+'–';
           if(!o.i){ const cr=(d.created_by||[]).map(c=>c.name).join(', '); if(cr) up.i=cr; }
-          if(!o.se&&o.c==='stream'&&!o.v&&(!o.d||approx(o.d))&&d.first_air_date) up.d=d.first_air_date;
+          if(!o.se&&o.c==='stream'&&!o.v&&(!o.d||o.de)&&d.first_air_date&&d.first_air_date>today()){ up.d=d.first_air_date; up.de=0; }
           if(maybeUp(o)){ // pas encore sortie : la série (ou la saison choisie) part dans « À venir »
             let fut=false, dd='';
             if(o.se){ const last=Math.max(0,...(d.seasons||[]).filter(x=>x.season_number>0&&x.air_date&&x.air_date<=today()).map(x=>x.season_number));
@@ -456,11 +456,11 @@ async function refreshFromTMDB(){
           // ciné : date vide → date TMDB ; date déjà mise → remplacée seulement par la date officielle de sortie en France
           if(UP(o.c)&&!o.v){ const so=o.c==='stream'||(o.k!=='c'&&streamOnly(m.d.release_dates)); if(so&&o.c!=='stream'){ up.c='stream'; up.k=''; up.r=lastRank('stream')+1000; }
             const dd=so?digitalDate(m.d.release_dates):'';
-            if(dd){ if(dd!==o.d) up.d=dd; } else if((!o.d||approx(o.d))&&m.date) up.d=m.date; else if(!so&&m.frDate&&m.frDate!==o.d) up.d=m.frDate; }
+            if(dd){ if(dd!==o.d||o.de){ up.d=dd; up.de=0; } } else if((!o.d||o.de)&&m.date&&!m.date.endsWith('-12-31')){ up.d=m.date; up.de=0; } else if(!so&&m.frDate&&(m.frDate!==o.d||o.de)){ up.d=m.frDate; up.de=0; } }
           if(maybeUp(o)){ // pas encore sorti : le film part dans « À venir » (ciné, ou streaming si sortie numérique seulement)
             const so=streamOnly(m.d.release_dates), rel=(so&&digitalDate(m.d.release_dates))||m.frDate||m.date||m.d.release_date||'';
             const fut=rel?rel>today():(m.d.status&&m.d.status!=='Released');
-            if(fut){ const c=so?'stream':'cine'; up.c=c; up.k=''; up.d=rel>today()?rel:''; up.r=lastRank(c)+1000; } else up.k='n'; }
+            if(fut){ const c=so?'stream':'cine'; up.c=c; up.k=''; up.d=rel>today()?rel:''; up.de=up.d.endsWith('-12-31')?1:0; up.r=lastRank(c)+1000; } else up.k='n'; }
         }
       }
     }catch(e){ break; } // relais indisponible : on réessaiera à la prochaine visite
@@ -511,7 +511,7 @@ const tmdbUrl=(tm,se)=>'https://www.themoviedb.org/'+(tm[0]==='t'?'tv':'movie')+
 const isoToFr=s=>/^\d{4}-\d{2}-\d{2}$/.test(s||'')?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):/^\d{4}-\d{2}$/.test(s||'')?s.slice(5,7)+'/'+s.slice(0,4):/^\d{4}$/.test(s||'')?s:'';
 const approx=s=>!!s&&s.length<10;
 // dernier jour possible de la période (sert à savoir si c'est sorti)
-const fullD=s=>!s?'':s.length===4?s+'-12-31':s.length===7?(()=>{ const [y,m]=s.split('-').map(Number); return s+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0'); })():s;
+
 function frToIso(s){ const m=(s||'').trim().match(/^(\d{1,2})[\/.\- ](\d{1,2})[\/.\- ](\d{4})$/);
   if(!m){ const g=(s||'').replace(/\D/g,'');
     if(g.length===6&&+g.slice(0,2)>=1&&+g.slice(0,2)<=12&&/^(19|20)/.test(g.slice(2))) return g.slice(2)+'-'+g.slice(0,2); // mm/aaaa
@@ -519,6 +519,7 @@ function frToIso(s){ const m=(s||'').trim().match(/^(\d{1,2})[\/.\- ](\d{1,2})[\
     return ''; }
   const d=+m[1], mo=+m[2], y=+m[3], dt=new Date(y,mo-1,d); if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d) return '';
   return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+function fullD(s){ if(!s) return ''; if(s.length===4) return s+'-12-31'; if(s.length===7){ const [y,m]=s.split('-').map(Number); return s+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0'); } return s; }
 const today=()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 function dinfo(s){
   if(approx(s)){ const [y,m]=s.split('-').map(Number), t=new Date(); t.setHours(0,0,0,0);
@@ -615,7 +616,7 @@ function render(){
     else if(UP(o.c)&&o.d){ const di=dinfo(o.d); rkHtml=`<div class="rk date">${di.day}<small>${di.mon}</small></div>`;
       meta.push(`<span class="bdg ${o.c}">${o.c==='cine'?'Ciné':'Streaming'}</span>`);
       if(di.out){ const ld=dinfo(leaveDate(o)); meta.push(`<span class="out">${di.rel==='aujourd’hui'?'Sort aujourd’hui':'Sorti'}</span> · passe dans ${/^t/.test(o.tm)?'les séries':'les films'} le ${ld.day} ${ld.mon}`); }
-      else meta.push(`<span class="soon">${di.full} · ${di.rel}</span>`); }
+      else meta.push(`<span class="soon">${di.full} · ${di.rel}${o.de?' · date estimée':''}</span>`); }
     else if(UP(o.c)){ rkHtml=`<div class="rk date">?</div>`; meta.push(`<span class="bdg ${o.c}">${o.c==='cine'?'Ciné':'Streaming'}</span>`); }
     else { const r=rk.get(id)||''; rkHtml=`<div class="rk${r&&r<=3?' podium':''}" data-pos="${r}">${r}</div>`; }
     if(o.g) meta.push(`<span class="saga">saga ${esc(o.g)}</span>`);
@@ -720,7 +721,7 @@ function openEdit(id){
   $('#editTitle').textContent=o?'Modifier':'Ajouter un titre'; $('#saveBtn').textContent=o?'Enregistrer':'Ajouter';
   $('#delBtn').style.display=o?'':'none'; delArmed=false; $('#delBtn').textContent='Supprimer';
   curTm=o?o.tm:''; curP=o?o.p:''; fSe=o?o.se:0; tvInfo=null; drawSeasons(); if(o&&/^t\d+$/.test(o.tm)) loadSeasons(o.tm.slice(1),o.t,o.se);
-  $('#fT').value=o?o.t:''; $('#fN').value=o?o.n:''; $('#fY').value=o?o.y:''; $('#fI').value=o?o.i:''; $('#fG').value=o?o.g:''; hideSug(); $('#fD').value=o?isoToFr(o.d):'';
+  $('#fT').value=o?o.t:''; $('#fN').value=o?o.n:''; $('#fY').value=o?o.y:''; $('#fI').value=o?o.i:''; $('#fG').value=o?o.g:''; hideSug(); $('#fD').value=o?(o.de&&o.d?(o.d.endsWith('-12-31')?o.d.slice(0,4):o.d.slice(5,7)+'/'+o.d.slice(0,4)):isoToFr(o.d)):'';
   $('#fPos').value=o&&!o.v?(rankMap().get(id)||''):'';
   drawForm(); $('#editDlg').showModal(); if(!o) setTimeout(()=>$('#fT').focus(),50);
 }
@@ -943,7 +944,7 @@ $('#delBtn').onclick=()=>{
 $('#editForm').onsubmit=async e=>{
   e.preventDefault();
   const t=$('#fT').value.trim(); if(!t) return $('#fT').focus();
-  const dRaw=$('#fD').value.trim(), d=UP(fCat)?frToIso(dRaw):'';
+  const dRaw=$('#fD').value.trim(), dIso=UP(fCat)?frToIso(dRaw):'', d=fullD(dIso), de=dIso&&dIso.length<10?1:0;
   if(UP(fCat)&&dRaw&&!d){ toast('Date invalide : jj/mm/aaaa, ou mm/aaaa si on ne connaît que le mois, ou aaaa'); $('#fD').focus(); return; }
   const n=$('#fN').value.trim(), y=$('#fY').value.trim(), inf=$('#fI').value.trim(), g=$('#fG').value.trim(), pos=parseInt($('#fPos').value,10);
   const dup=findDup(curTm,/^t/.test(curTm)?fSe:0,t,editId);
@@ -952,12 +953,12 @@ $('#editForm').onsubmit=async e=>{
   if(editId){
     const o=items.get(editId); if(!o) return;
     const moved=o.c!==fCat, old=rankMap().get(editId);
-    await put(editId,{...o,t,se:/^t/.test(curTm)?fSe:0,c:fCat,k:(o.c==='stream'&&fCat==='cine')?'c':(fCat==='stream'?'':(UP(o.c)&&!UP(fCat))?'n':o.k),w:fW,s:fS,d,n,y,i:inf,g,tm:curTm,p:curP,r:moved?lastRank(fCat)+1000:o.r});
+    await put(editId,{...o,t,se:/^t/.test(curTm)?fSe:0,c:fCat,k:(o.c==='stream'&&fCat==='cine')?'c':(fCat==='stream'?'':(UP(o.c)&&!UP(fCat))?'n':o.k),w:fW,s:fS,d,de,n,y,i:inf,g,tm:curTm,p:curP,r:moved?lastRank(fCat)+1000:o.r});
     if(!UP(fCat)&&!o.v&&pos&&(moved||pos!==old)) moveTo(editId,pos);
     toast('Modifié');
   } else {
     const id='i'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-    await put(id,{t,se:/^t/.test(curTm)?fSe:0,c:fCat,k:'',w:fW,s:fS,d,n,y,i:inf,g,tm:curTm,p:curP,r:lastRank(fCat)+1000,v:false,a:Date.now()},true);
+    await put(id,{t,se:/^t/.test(curTm)?fSe:0,c:fCat,k:'',w:fW,s:fS,d,de,n,y,i:inf,g,tm:curTm,p:curP,r:lastRank(fCat)+1000,v:false,a:Date.now()},true);
     if(!UP(fCat)&&pos) await moveTo(id,pos);
     if(st.cat!=='all') st.cat=UP(fCat)?'up':fCat; st.status='todo'; st.q=''; $('#q').value='';
     lastMoved=id; render(); toast('« '+t+' » ajouté');
