@@ -387,7 +387,7 @@ async function graduateCine(){
       else if(/^t\d+$/.test(o.tm)){ c='serie'; const d=await tmdb('/tv/'+o.tm.slice(1)); const anim=(d.genres||[]).some(g=>g.id===16), jp=d.original_language==='ja'||(d.origin_country||[]).includes('JP'); c=anim?(jp?'anime':'aserie'):'serie'; }
     }catch(e){ if(/^t/.test(o.tm)) c='serie'; }
     const cur=items.get(id); if(!cur||!UP(cur.c)||cur.v) continue;
-    await patch(id,{c, k:'', r:lastRank(c)+1000, y:cur.y||cur.d.slice(0,4)},true); names.push(cur.t);
+    await patch(id,{c, k:'n', r:lastRank(c)+1000, y:cur.y||cur.d.slice(0,4)},true); names.push(cur.t);
   }
   graduating=false;
   if(names.length){ render(); toast(names.length===1?'« '+names[0]+' » est sorti : passé dans les titres à voir':names.length+' sorties passées dans les titres à voir'); }
