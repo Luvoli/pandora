@@ -1,0 +1,20 @@
+# Garde la base Supabase active (le plan gratuit la met en pause après 7 jours sans activité).
+# La requête lit seulement un compteur technique vide ; la clé est la clé publique du site.
+name: Garder la base active
+on:
+  schedule:
+    - cron: "17 3 * * 1,4"   # lundi et jeudi, ~4 h 17 à Paris
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Requête vers la base
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "https://tyzbletpcxdcrzseffyn.supabase.co/rest/v1/ping?select=id" -H "apikey: sb_publishable_pyhRVcvG17njHvw3IJ-Obg_2yWfQpPJ")
+            echo "HTTP $code"; [ "$code" = "200" ] && exit 0; sleep 30
+          done
+          echo "La base ne répond pas : la réactiver sur supabase.com (Resume project)."; exit 1
