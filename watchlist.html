@@ -776,13 +776,27 @@ function searchTMDB(raw){
   clearTimeout(tmTimer);
   const sm=raw.match(SEASON_RE); if(sm&&baseTitle(raw).length>=2) raw=baseTitle(raw);
   const all=raw.trim().split(/\s+/), yrs=all.filter(t=>/^(19|20)\d\d$/.test(t)), qtxt=all.filter(t=>!yrs.includes(t)).join(' ');
-  const key=snorm(raw); if(snorm(qtxt).length<2){ tmQ=''; tmRes=null; return; }
+  const key=snorm(raw);
+  // lien ou identifiant TMDB collé (ex. themoviedb.org/tv/275989) : on va chercher directement la fiche
+  const lk=raw.match(/(?:themoviedb\.org\/)?\b(tv|movie)\/(\d+)/i);
+  if(lk){ if(key===tmQ) return; tmQ=key; tmRes=null; tmErr=''; tmBusy=true; tmSaga=null;
+    tmTimer=setTimeout(async()=>{ try{ const t=lk[1].toLowerCase(), d=await tmdb('/'+t+'/'+lk[2]); if(tmQ!==key) return;
+        tmRes=[{...d,media_type:t,genre_ids:(d.genres||[]).map(g=>g.id)}]; }
+      catch(e){ if(tmQ===key){ tmRes=[]; tmErr='Fiche TMDB introuvable avec ce lien.'; } }
+      if(tmQ===key){ tmBusy=false; if($('#editDlg').open) drawSugT(); } },150); return; }
+  if(snorm(qtxt).length<2){ tmQ=''; tmRes=null; return; }
   if(key===tmQ) return; tmQ=key; tmRes=null; tmErr=''; tmBusy=true; tmSaga=null;
   tmTimer=setTimeout(async()=>{
     try{
-      const [multi,coll]=await Promise.all([tmdb('/search/multi',{query:qtxt,include_adult:'false'}),tmdb('/search/collection',{query:qtxt})]);
+      const [multi,coll,tvs,mvs]=await Promise.all([tmdb('/search/multi',{query:qtxt,include_adult:'false'}),tmdb('/search/collection',{query:qtxt}),
+        tmdb('/search/tv',{query:qtxt,include_adult:'false'}).catch(()=>({})),tmdb('/search/movie',{query:qtxt,include_adult:'false'}).catch(()=>({}))]);
       if(tmQ!==key) return;
-      let res=(multi.results||[]).filter(r=>(r.media_type==='movie'||r.media_type==='tv')&&(r.title||r.name));
+      // on fusionne : recherche globale + séries + films (sinon un titre courant comme « Love Me » noie certaines fiches)
+      const seen=new Set(), pool=[];
+      [...(multi.results||[]),...(tvs.results||[]).map(r=>({...r,media_type:'tv'})),...(mvs.results||[]).map(r=>({...r,media_type:'movie'}))].forEach(r=>{
+        if(!(r.media_type==='movie'||r.media_type==='tv')||!(r.title||r.name)) return; const k=r.media_type+r.id; if(seen.has(k)) return; seen.add(k); pool.push(r); });
+      const qn=snorm(qtxt), exact=r=>[r.title,r.name,r.original_title,r.original_name].some(x=>x&&snorm(x)===qn);
+      let res=[...pool.filter(exact),...pool.filter(r=>!exact(r))];
       // saga : si le texte tapé correspond au nom d'une collection, on montre ses films dans l'ordre de sortie
       const q=snorm(qtxt), c=(coll.results||[]).find(c=>{ const n=snorm(cleanSaga(c.name)); return n&&(n.startsWith(q)||q.startsWith(n)); });
       if(c&&q.length>=3){
@@ -793,7 +807,7 @@ function searchTMDB(raw){
       }
       if(yrs.length){ const f=res.filter(r=>yrs.includes(yearOf(r.release_date||r.first_air_date))); if(f.length) res=f;
         if(tmSaga){ const fs=tmSaga.parts.filter(r=>yrs.includes(yearOf(r.release_date))); if(fs.length) tmSaga.parts=fs; } }
-      tmRes=res.slice(0,8);
+      tmRes=res.slice(0,14);
       const top=tmRes[0]; tmFirst=!!(top&&tmSaga&&snorm(top.title||top.name)===q&&(top.vote_count||0)>Math.max(...tmSaga.parts.map(x=>x.vote_count||0)));
     }catch(e){ if(tmQ===key){ tmRes=[]; tmErr='La recherche n’a pas marché, réessaie dans un instant.'; } }
     if(tmQ===key){ tmBusy=false; if($('#editDlg').open) drawSugT(); }
@@ -806,11 +820,13 @@ function findDup(tm,se,t,exceptId){ const k=snorm(t);
     if(k&&snorm(o.t)===k) return o; }
   return null; }
 function ownedTm(r){ const tm=(r.media_type==='tv'?'t':'m')+r.id; return [...items.values()].find(o=>o.tm===tm&&!(o.se>0)); }
+const _rg=(()=>{ try{ return new Intl.DisplayNames(['fr'],{type:'region'}); }catch(e){ return null; } })(), _lg=(()=>{ try{ return new Intl.DisplayNames(['fr'],{type:'language'}); }catch(e){ return null; } })();
+const regionFr=c=>{ try{ return _rg?_rg.of(c):c; }catch(e){ return c; } }, langFr=l=>{ if(!l||l==='xx') return ''; try{ const n=_lg?_lg.of(l):l; return n&&n!==l?'en '+n:''; }catch(e){ return ''; } };
 function resBtn(r,k,src){
   const tv=r.media_type==='tv', t=tv?r.name:r.title, o=tv?r.original_name:r.original_title, y=yearOf(tv?r.first_air_date:r.release_date);
   const img=r.poster_path?`<img class="sp" src="${IMG}w92${r.poster_path}" alt="" loading="lazy">`:'<span class="sp"></span>';
-  const own=ownedTm(r);
-  return `<button type="button" data-src="${src}" data-k="${k}"${own?' class="own"':''}>${img}<span class="st"><b>${esc(t)}</b><small>${esc([y||'à venir',o&&o!==t?o:''].filter(Boolean).join(' · '))}</small></span><span class="tag">${own?(own.v?'déjà vu':'déjà ajouté'):CATTAG[guessCat(r)]}</span></button>`;
+  const own=ownedTm(r), cc=(r.origin_country||[])[0], orig=cc?regionFr(cc):langFr(r.original_language);
+  return `<button type="button" data-src="${src}" data-k="${k}"${own?' class="own"':''}>${img}<span class="st"><b>${esc(t)}</b><small>${esc([y||'à venir',tv?'série':'film',orig,o&&o!==t?o:''].filter(Boolean).join(' · '))}</small></span><span class="tag">${own?(own.v?'déjà vu':'déjà ajouté'):CATTAG[guessCat(r)]}</span></button>`;
 }
 function drawSugT(){
   const raw=$('#fT').value.trim(), q=snorm(raw), box=$('#sugT');
@@ -826,7 +842,7 @@ function drawSugT(){
     h+=tmFirst?hr+hs:hs+hr;
     if(!tmRes.length&&!(tmSaga&&tmSaga.parts.length)) h+=`<div class="msg">${esc(tmErr||'Rien trouvé sur TMDB. Tu peux remplir à la main : le titre tapé sera gardé.')}</div>`;
   }
-  h+='<div class="msg tmdbn">Recherche fournie par TMDB</div>';
+  h+='<div class="msg tmdbn">Recherche fournie par TMDB · pas trouvé ? colle le lien de la fiche TMDB</div>';
   box.innerHTML=h; box.hidden=false;
 }
 /* ---------- saisons : ajouter une série entière ou une seule saison ---------- */
