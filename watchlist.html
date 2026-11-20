@@ -728,7 +728,7 @@ function openEdit(id){
 $('#addBtn').onclick=()=>openEdit(null);
 
 /* ---------- suggestions (titre, saga, réalisateur) : TMDB en direct ---------- */
-const snorm=x=>(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+const snorm=x=>(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').normalize('NFC').replace(/[^\p{L}\p{N}]+/gu,' ').trim(); // garde le coréen, le japonais, etc.
 const IMG='https://image.tmdb.org/t/p/';
 const tmCache=new Map();
 async function tmdb(path,params={}){
