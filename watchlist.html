@@ -322,7 +322,7 @@ const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 
 let items = new Map(), mode='loading', readOnly=false, sorting=false, curTm='', curP='', chan=null;
 const st = {cat:'all', who:'all', status:'todo', q:'', upf:'all'};
-try{ const u=JSON.parse(localStorage.getItem(LS+'-ui')||'{}'); ['cat','who','status','upf'].forEach(k=>{ if(u[k]) st[k]=u[k]; }); if(st.cat==='cine'||st.cat==='stream'){ st.upf=st.cat; st.cat='up'; } }catch(e){}
+try{ const u=JSON.parse(localStorage.getItem(LS+'-ui')||'{}'); ['who','status'].forEach(k=>{ if(u[k]) st[k]=u[k]; }); }catch(e){}
 
 /* ---------- stockage (Supabase) ---------- */
 function clean(o){
