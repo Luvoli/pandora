@@ -820,13 +820,11 @@ function findDup(tm,se,t,exceptId){ const k=snorm(t);
     if(k&&snorm(o.t)===k) return o; }
   return null; }
 function ownedTm(r){ const tm=(r.media_type==='tv'?'t':'m')+r.id; return [...items.values()].find(o=>o.tm===tm&&!(o.se>0)); }
-const _rg=(()=>{ try{ return new Intl.DisplayNames(['fr'],{type:'region'}); }catch(e){ return null; } })(), _lg=(()=>{ try{ return new Intl.DisplayNames(['fr'],{type:'language'}); }catch(e){ return null; } })();
-const regionFr=c=>{ try{ return _rg?_rg.of(c):c; }catch(e){ return c; } }, langFr=l=>{ if(!l||l==='xx') return ''; try{ const n=_lg?_lg.of(l):l; return n&&n!==l?'en '+n:''; }catch(e){ return ''; } };
 function resBtn(r,k,src){
   const tv=r.media_type==='tv', t=tv?r.name:r.title, o=tv?r.original_name:r.original_title, y=yearOf(tv?r.first_air_date:r.release_date);
   const img=r.poster_path?`<img class="sp" src="${IMG}w92${r.poster_path}" alt="" loading="lazy">`:'<span class="sp"></span>';
-  const own=ownedTm(r), cc=(r.origin_country||[])[0], orig=cc?regionFr(cc):langFr(r.original_language);
-  return `<button type="button" data-src="${src}" data-k="${k}"${own?' class="own"':''}>${img}<span class="st"><b>${esc(t)}</b><small>${esc([y||'à venir',tv?'série':'film',orig,o&&o!==t?o:''].filter(Boolean).join(' · '))}</small></span><span class="tag">${own?(own.v?'déjà vu':'déjà ajouté'):CATTAG[guessCat(r)]}</span></button>`;
+  const own=ownedTm(r);
+  return `<button type="button" data-src="${src}" data-k="${k}"${own?' class="own"':''}>${img}<span class="st"><b>${esc(t)}</b><small>${esc([y||'à venir',o&&o!==t?o:''].filter(Boolean).join(' · '))}</small></span><span class="tag">${own?(own.v?'déjà vu':'déjà ajouté'):CATTAG[guessCat(r)]}</span></button>`;
 }
 function drawSugT(){
   const raw=$('#fT').value.trim(), q=snorm(raw), box=$('#sugT');
