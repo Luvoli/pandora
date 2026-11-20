@@ -337,6 +337,22 @@ body.modal-open{overflow:hidden}
 .toast{position:fixed;left:50%;bottom:22px;z-index:60;transform:translate(-50%,20px);opacity:0;pointer-events:none;padding:10px 18px;border-radius:99px;
   background:var(--sheet-solid);border:1px solid var(--line);color:var(--ink);font:600 .9rem var(--body);box-shadow:0 12px 30px -8px rgba(0,0,0,.7);transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .25s;max-width:calc(100vw - 32px);text-align:center}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+.toast{background:rgba(22,20,30,.96);color:#f3eee6;border-color:rgba(255,255,255,.16)}
+.toast.act{pointer-events:auto;display:flex;align-items:center;justify-content:center;border-radius:18px;text-align:left;width:max-content}
+.toast.act button{flex:none}
+.toast button{border:0;background:#e0524f;color:#fff;font:700 .82rem var(--body);margin-left:12px;padding:5px 12px;border-radius:99px;cursor:pointer}
+.toast button:hover{filter:brightness(1.12)}
+.viewseg{display:inline-flex;padding:3px;border-radius:99px;background:rgba(0,0,0,.28);border:1px solid var(--line);gap:2px;margin-right:4px}
+.filters .viewseg button{border:0;padding:6px 15px}
+.filters .viewseg button:not([aria-pressed="true"]){background:transparent;box-shadow:none}
+.filters .viewseg button:not([aria-pressed="true"]):hover{box-shadow:none;background:rgba(255,255,255,.06)}
+.viewseg button .vc{opacity:.65;font-size:.8em;margin-left:5px}
+li.item.leaving{animation:leave .32s ease forwards;pointer-events:none}
+@keyframes leave{to{opacity:0;transform:translateX(18px);max-height:0;padding-top:0;padding-bottom:0;margin-top:0;margin-bottom:0}}
+li.item{max-height:600px}
+.tag.when{background:rgba(242,196,109,.14);border-color:rgba(242,196,109,.35)}
+.empty.alldone{opacity:.8}
+
 body.noanim *{animation-delay:0s!important}
 body.noanim header .txt,body.noanim .ring{animation:none!important}
 @media(max-width:640px){.sheet{padding:18px 16px 14px;border-radius:18px}.acts .x.edit{opacity:.8}}
@@ -438,8 +454,6 @@ window.CFG={
   },
   filters:[
     {id:"all",label:"Tout",test:()=>true},
-    {id:"todo",label:"Pas encore fait",test:(it,d)=>!d},
-    {id:"done",label:"Fait",test:(it,d)=>d},
   ],
   groupFilter:true,reorder:true,status:true,flags:true,places:true,groupBar:true,prices:true,pricePh:"Ex. ≈ 15 € / pers.",
   zoneLabels:{prio:"★ En priorité",prioSub:"Ce qu'on veut vraiment faire",maybe:"☾ Un jour, peut-être",maybeSub:"Si l'occasion se présente"},
@@ -628,9 +642,11 @@ function setBadge(){
   const txt = { pending:"Synchronisation…", shared:"Synchronisé" + (window.duoNames && duoNames() ? " · " + duoNames() : ""), saving:"Enregistrement…", error:"Pas enregistré : vérifie ta connexion" }[mode];
   b.textContent = txt; b.dataset.mode = mode === "error" ? "readonly" : mode;
 }
-function toast(msg){
+function toast(msg, undo){
   let t = $("#toast"); if (!t) { t = el("div", "toast"); t.id = "toast"; t.setAttribute("role","status"); document.body.appendChild(t); }
-  t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 3200);
+  t.textContent = msg; t.classList.toggle("act", !!undo);
+  if (undo) { const u = el("button", null, "Annuler"); u.type = "button"; u.addEventListener("click", () => { t.classList.remove("on", "act"); undo(); }); t.appendChild(u); }
+  t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on", "act"), undo ? 5000 : 3200);
 }
 async function publishNow(){
   timer = null;
@@ -664,7 +680,10 @@ async function connectDB(){
     if (s === lastSaved || timer) return; // notre propre enregistrement, ou une modif locale va partir
     state = normalize(p.new.state); lastSaved = s; render();
   }).subscribe();
+  const flush = () => { if (timer) { clearTimeout(timer); publishNow(); } };
+  addEventListener("pagehide", flush);
   document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "hidden") { flush(); return; }
     if (document.visibilityState !== "visible" || timer) return;
     const r = await sb.from("lists").select("state").eq("id", LIST_ID).maybeSingle();
     if (r.data && r.data.state && JSON.stringify(r.data.state) !== lastSaved && !timer) { state = normalize(r.data.state); lastSaved = JSON.stringify(state); render(); }
@@ -705,12 +724,14 @@ function openImport(){
 /* ---------- Filtres (préférence de chaque personne) ---------- */
 let ui = Object.assign({ f:"all", g:"all" }, LS.get(UIKEY) || {});
 if (!C.filters.some(f => f.id === ui.f)) ui.f = "all";
+let view = "todo"; /* "todo" | "done" — remis à « À faire » à chaque ouverture */
 const saveUI = () => LS.set(UIKEY, ui);
 
 /* ---------- Rendu ---------- */
 let justId = null;
 function itemShown(it){
   const isDone = !!state.done[it.id];
+  if (isDone !== (view === "done")) return false;
   const f = C.filters.find(x => x.id === ui.f) || C.filters[0];
   return f.test(it, isDone);
 }
@@ -727,6 +748,7 @@ function render(){
     const d = its.filter(it => state.done[it.id]).length;
     total += its.length; ok += d;
     if (C.groupFilter && ui.g !== "all" && (ui.g === "prio" ? g.status !== "prio" : ui.g !== g.id)) return;
+    if (view === "done" && !its.some(it => state.done[it.id] && itemShown(it))) return;
     if (C.status && zone !== g.status) {
       zone = g.status;
       const z = el("div", "zone " + zone);
@@ -738,7 +760,7 @@ function render(){
     const pi = peers.indexOf(g);
     root.appendChild(renderGroup(g, its, d, gi++, pi, peers));
   });
-  if (!root.children.length) root.appendChild(el("p", "empty big", "Rien à afficher avec ce filtre."));
+  if (!root.children.length) root.appendChild(el("p", "empty big", view === "done" ? "Rien de coché ici pour l'instant." : "Rien à afficher avec ce filtre."));
   SUM = { done: ok, total };
   $("#count").textContent = ok + " / " + total + " faits";
   $("#fill").style.width = (total ? ok / total * 100 : 0) + "%";
@@ -782,13 +804,23 @@ function renderGroup(g, its, d, gi, pi, peers){
   s.appendChild(head);
   if (C.groupBar) { const gb = el("div", "gbar"); const gi2 = el("i"); gi2.style.width = (its.length ? d / its.length * 100 : 0) + "%"; gb.appendChild(gi2); s.appendChild(gb); }
   const ul = el("ul", "items");
-  its.forEach((it, ii) => {
+  const list = view === "done" ? its.map((it, ii) => [it, ii]).sort((a, b) => (state.done[b[0].id] || 0) - (state.done[a[0].id] || 0)) : its.map((it, ii) => [it, ii]);
+  list.forEach(([it, ii]) => {
     if (!itemShown(it)) return;
     const isDone = !!state.done[it.id];
     const id = "c" + gi + "-" + ii;
     const li = el("li", "item" + (isDone ? " done" : "")); li.dataset.id = it.id;
     const cb = el("input"); cb.type = "checkbox"; cb.id = id; cb.checked = isDone;
-    cb.addEventListener("change", () => { if (cb.checked) { state.done[it.id] = 1; justId = it.id; } else delete state.done[it.id]; commit(); });
+    cb.addEventListener("change", () => {
+      const nowDone = cb.checked, prev = state.done[it.id];
+      li.classList.add("leaving");
+      setTimeout(() => {
+        if (nowDone) state.done[it.id] = Date.now(); else delete state.done[it.id];
+        commit();
+        const nm = it.n.length > 34 ? it.n.slice(0, 32).trim() + "…" : it.n;
+        toast(nowDone ? "« " + nm + " » fait ✓" : "« " + nm + " » remis à faire", () => { if (nowDone) delete state.done[it.id]; else state.done[it.id] = prev || 1; commit(); });
+      }, 300);
+    });
     const lab = el("label", "name", it.n); lab.htmlFor = id;
     const acts = el("div", "acts");
     const e = btn("x edit", "✎", "Modifier " + it.n); e.addEventListener("click", () => openItemModal(it));
@@ -800,14 +832,18 @@ function renderGroup(g, its, d, gi, pi, peers){
     if (C.places && it.place) tg.appendChild(el("span", "tag place", "📍 " + it.place));
     it.tags.forEach(t => { const def = C.tagDefs[t]; if (def) tg.appendChild(el("span", "tag " + (def.cls || t), def.label)); });
     if (C.prices && it.price) tg.appendChild(el("span", "tag price", "💰 " + it.price));
+    if (isDone && state.done[it.id] > 1) tg.appendChild(el("span", "tag when", "✓ fait le " + new Date(state.done[it.id]).toLocaleDateString("fr-FR", { day:"numeric", month:"short", year:"numeric" })));
     if (tg.children.length) li.appendChild(tg);
     ul.appendChild(li);
   });
   if (ul.children.length) s.appendChild(ul);
+  else if (view === "todo" && its.length && d === its.length) s.appendChild(el("p", "empty alldone", "Tout est fait ici ✓ — voir dans « Fait »"));
   else s.appendChild(el("p", "empty", its.length ? "Rien ici avec ce filtre." : C.emptyGroup));
-  const add = btn("addhere", "+ Ajouter " + C.itemWordArt, "Ajouter dans " + g.t);
-  add.addEventListener("click", () => openItemModal(null, g.id));
-  s.appendChild(add);
+  if (view === "todo") {
+    const add = btn("addhere", "+ Ajouter " + C.itemWordArt, "Ajouter dans " + g.t);
+    add.addEventListener("click", () => openItemModal(null, g.id));
+    s.appendChild(add);
+  }
   return s;
 }
 function move(id, peers, dir){
@@ -821,7 +857,16 @@ function move(id, peers, dir){
 }
 function renderFilters(G){
   const box = $("#filters"); box.innerHTML = "";
-  C.filters.forEach(f => {
+  const seg = el("div", "viewseg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", "À faire ou fait");
+  const live = allItems().filter(it => !state.removed[it.id] && !state.removedGroups[it.g] && G.some(g => g.id === it.g)), nDone = live.filter(it => state.done[it.id]).length;
+  [["todo", "À faire", live.length - nDone], ["done", "Fait", nDone]].forEach(([v, label, c]) => {
+    const b = btn("", label); b.dataset.v = v; b.setAttribute("aria-pressed", view === v ? "true" : "false");
+    b.appendChild(el("span", "vc", String(Math.max(0, c))));
+    b.addEventListener("click", () => { if (view === v) return; view = v; render(); const L = $("#list").getBoundingClientRect().top + scrollY - 130; if (scrollY > L) scrollTo({ top: Math.max(0, L) }); });
+    seg.appendChild(b);
+  });
+  box.appendChild(seg);
+  if (C.filters.length > 1) C.filters.forEach(f => {
     const b = btn("", f.label); b.dataset.f = f.id; b.setAttribute("aria-pressed", ui.f === f.id ? "true" : "false");
     b.addEventListener("click", () => { ui.f = f.id; saveUI(); render(); });
     box.appendChild(b);
