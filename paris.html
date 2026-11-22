@@ -121,8 +121,8 @@ li.item input.just::before{content:"";position:absolute;inset:-7px;border-radius
 @keyframes burst{0%{opacity:1;transform:scale(.5)}100%{opacity:0;transform:scale(1.7)}}
 
 .name{font-weight:600;cursor:pointer;font-size:1.02rem}
-.note{grid-column:2;color:var(--muted);font-size:.93rem}
-.tags{grid-column:2;display:flex;flex-wrap:wrap;gap:6px;margin-top:3px}
+.note{grid-column:2 / -1;padding-right:6px;color:var(--muted);font-size:.93rem}
+.tags{grid-column:2 / -1;display:flex;flex-wrap:wrap;gap:6px;margin-top:3px}
 .tag{font:600 .72rem var(--body);letter-spacing:.03em;padding:2px 9px;border-radius:99px;border:1px solid}
 .tag.free{background:rgba(242,196,109,.12);color:var(--gold2);border-color:rgba(242,196,109,.35)}
 .tag.pay{background:rgba(255,143,163,.1);color:var(--rose);border-color:rgba(255,143,163,.32)}
@@ -231,6 +231,24 @@ body.modal-open{overflow:hidden}
 .toast{position:fixed;left:50%;bottom:22px;z-index:60;transform:translate(-50%,20px);opacity:0;pointer-events:none;padding:10px 18px;border-radius:99px;
   background:var(--sheet-solid);border:1px solid var(--line);color:var(--ink);font:600 .9rem var(--body);box-shadow:0 12px 30px -8px rgba(0,0,0,.7);transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .25s;max-width:calc(100vw - 32px);text-align:center}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+section.group{padding:16px 16px 14px;border-radius:20px;background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.015));border:1px solid var(--line)}
+section.group .addhere{margin-top:2px}
+.gcount{white-space:nowrap}
+.x.mv{font-size:.95rem;opacity:.45;padding:3px 6px}
+li.item:hover .x.mv,.x.mv:focus-visible{opacity:.9}
+.x.mv:hover{color:var(--accent2);background:rgba(255,255,255,.08);transform:none}
+.x.mv:disabled{opacity:.12!important;cursor:default;background:none}
+li.item.moved{animation:fresh 1.2s ease-out}
+.searchrow{position:relative;margin:0}
+.searchrow input{width:100%;box-sizing:border-box;padding:11px 40px 11px 42px;border-radius:99px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:inherit;font:500 .95rem var(--body);outline:none;transition:border-color .2s,box-shadow .2s}
+.searchrow input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(242,196,109,.15)}
+.searchrow input::placeholder{color:var(--muted)}
+.searchrow input::-webkit-search-cancel-button{display:none}
+.searchrow .ico{position:absolute;left:16px;top:50%;transform:translateY(-50%);opacity:.6;pointer-events:none}
+.searchrow .clr{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:rgba(255,255,255,.08);color:inherit;width:28px;height:28px;border-radius:50%;cursor:pointer}
+.searchrow .clr[hidden]{display:none}
+.searchinfo{margin:-6px 0 12px;font-size:.85rem;color:var(--muted)}
+@media(max-width:640px){.acts .x.mv{opacity:.6;padding:3px 4px}.acts{gap:0}}
 .toast{background:rgba(22,20,30,.96);color:#f3eee6;border-color:rgba(255,255,255,.16)}
 .toast.act{pointer-events:auto;display:flex;align-items:center;justify-content:center;border-radius:18px;text-align:left;width:max-content}
 .toast.act button{flex:none}
@@ -303,6 +321,7 @@ body.noanim header .txt,body.noanim .ring{animation:none!important}
     </ul>
   </div>
 
+  <div class="searchrow"><span class="ico" aria-hidden="true">🔍</span><input id="q" type="search" placeholder="Rechercher une activité…" autocomplete="off" aria-label="Rechercher"><button type="button" class="clr" id="qclr" aria-label="Effacer la recherche" hidden>×</button></div>
   <div class="filters" id="filters" role="group" aria-label="Filtrer"></div>
 
   <main id="list"></main>
@@ -334,6 +353,7 @@ window.CFG={
   addTitle:"Ajouter une activité",addGroupTitle:"Nouvelle catégorie",newGroupLabel:"Nouvelle catégorie…",
   namePh:"Ex. Musée de Montmartre",newGroupPh:"Ex. Restos à tester",notePh:"Comment y aller, quand y aller, prix…",
   emptyGroup:"Rien pour l'instant.",
+  reorder:true,
   prices:true,pricePh:"Ex. 10 € (-26 ans)",
 };
 CFG.decor=function(){
@@ -398,7 +418,7 @@ const SS = {
 };
 
 /* ---------- État ---------- */
-const blank = () => ({ v:1, done:{}, removed:{}, removedGroups:{}, custom:[], customGroups:[], edits:{}, gedits:{}, order:[], status:{}, deleted:{} });
+const blank = () => ({ v:1, done:{}, removed:{}, removedGroups:{}, custom:[], customGroups:[], edits:{}, gedits:{}, order:[], status:{}, deleted:{}, iorder:{} });
 function normalize(s){ const b = blank(); s = s && typeof s === "object" ? s : {}; for (const k in b) if (s[k] == null || typeof s[k] !== typeof b[k] || Array.isArray(b[k]) !== Array.isArray(s[k])) s[k] = b[k]; return s; }
 let embedded = {};
 try { embedded = JSON.parse(document.getElementById("state").textContent || "{}"); } catch(e) {}
@@ -519,8 +539,12 @@ const saveUI = () => {};
 
 /* ---------- Rendu ---------- */
 let justId = null;
+let Q = "", GHIT = new Set(); /* recherche : cherche partout (à faire + fait, tous les filtres) */
+const qn = x => (x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const searchHit = it => { const h = " " + qn([it.n, it.note, it.place].join(" ")) + " "; return qn(Q).split(" ").every(w => h.includes(w)); };
 function itemShown(it){
   const isDone = !!state.done[it.id];
+  if (Q) return GHIT.has(it.g) || searchHit(it);
   if (isDone !== (view === "done")) return false;
   const f = C.filters.find(x => x.id === ui.f) || C.filters[0];
   return f.test(it, isDone);
@@ -530,15 +554,18 @@ function render(){
   if (C.groupFilter && ui.g !== "all" && ui.g !== "prio" && !G.some(g => g.id === ui.g && !state.removedGroups[g.id])) ui.g = "all";
   renderFilters(G);
   const root = $("#list"); root.innerHTML = "";
-  let total = 0, ok = 0, zone = null, gi = 0;
+  let total = 0, ok = 0, zone = null, gi = 0; GHIT = new Set();
   const live = G.filter(g => !state.removedGroups[g.id]);
   const ordered = C.status ? live.filter(g => g.status === "prio").concat(live.filter(g => g.status !== "prio")) : live;
   ordered.forEach(g => {
-    const its = items.filter(it => it.g === g.id && !state.removed[it.id]);
+    const its = sortItems(g.id, items.filter(it => it.g === g.id && !state.removed[it.id]));
     const d = its.filter(it => state.done[it.id]).length;
     total += its.length; ok += d;
+    if (Q) { if (qn(g.t).includes(qn(Q))) GHIT.add(g.id); if (!GHIT.has(g.id) && !its.some(searchHit)) return; }
+    else {
     if (C.groupFilter && ui.g !== "all" && (ui.g === "prio" ? g.status !== "prio" : ui.g !== g.id)) return;
     if (view === "done" && !its.some(it => state.done[it.id] && itemShown(it))) return;
+    }
     if (C.status && zone !== g.status) {
       zone = g.status;
       const z = el("div", "zone " + zone);
@@ -550,7 +577,7 @@ function render(){
     const pi = peers.indexOf(g);
     root.appendChild(renderGroup(g, its, d, gi++, pi, peers));
   });
-  if (!root.children.length) root.appendChild(el("p", "empty big", view === "done" ? "Rien de coché ici pour l'instant." : "Rien à afficher avec ce filtre."));
+  if (!root.children.length) root.appendChild(el("p", "empty big", Q ? "Rien trouvé pour « " + Q + " »." : view === "done" ? "Rien de coché ici pour l'instant." : "Rien à afficher avec ce filtre."));
   SUM = { done: ok, total };
   $("#count").textContent = ok + " / " + total + " faits";
   $("#fill").style.width = (total ? ok / total * 100 : 0) + "%";
@@ -561,7 +588,7 @@ function render(){
 /* volets repliables : en mémoire seulement, tout se rouvre au rechargement */
 const FOLDED = new Set();
 function renderGroup(g, its, d, gi, pi, peers){
-  const folded = FOLDED.has(g.id);
+  const folded = !Q && FOLDED.has(g.id);
   const s = el("section", "group st-" + g.status + (folded ? " folded" : "")); s.dataset.g = g.id;
   const head = el("div", "sechead");
   const fold = btn("fold", "▾", (folded ? "Déplier " : "Replier ") + g.t); fold.setAttribute("aria-expanded", folded ? "false" : "true");
@@ -595,6 +622,7 @@ function renderGroup(g, its, d, gi, pi, peers){
   if (C.groupBar) { const gb = el("div", "gbar"); const gi2 = el("i"); gi2.style.width = (its.length ? d / its.length * 100 : 0) + "%"; gb.appendChild(gi2); s.appendChild(gb); }
   const ul = el("ul", "items");
   const list = view === "done" ? its.map((it, ii) => [it, ii]).sort((a, b) => (state.done[b[0].id] || 0) - (state.done[a[0].id] || 0)) : its.map((it, ii) => [it, ii]);
+  const shown = list.filter(([it]) => itemShown(it)).map(([it]) => it);
   list.forEach(([it, ii]) => {
     if (!itemShown(it)) return;
     const isDone = !!state.done[it.id];
@@ -603,18 +631,25 @@ function renderGroup(g, its, d, gi, pi, peers){
     const cb = el("input"); cb.type = "checkbox"; cb.id = id; cb.checked = isDone;
     cb.addEventListener("change", () => {
       const nowDone = cb.checked, prev = state.done[it.id];
-      li.classList.add("leaving");
+      if (!Q) li.classList.add("leaving");
       setTimeout(() => {
         if (nowDone) state.done[it.id] = Date.now(); else delete state.done[it.id];
         commit();
         const nm = it.n.length > 34 ? it.n.slice(0, 32).trim() + "…" : it.n;
         toast(nowDone ? "« " + nm + " » fait ✓" : "« " + nm + " » remis à faire", () => { if (nowDone) delete state.done[it.id]; else state.done[it.id] = prev || 1; commit(); });
-      }, 300);
+      }, Q ? 0 : 300);
     });
     const lab = el("label", "name", it.n); lab.htmlFor = id;
     const acts = el("div", "acts");
     const e = btn("x edit", "✎", "Modifier " + it.n); e.addEventListener("click", () => openItemModal(it));
     const x = btn("x", "×", "Retirer " + it.n); x.addEventListener("click", () => { state.removed[it.id] = 1; commit(); });
+    if (view === "todo" && !Q && shown.length > 1) {
+      const k = shown.indexOf(it), up = btn("x mv up", "↑", "Monter " + it.n), dn = btn("x mv dn", "↓", "Descendre " + it.n);
+      up.disabled = k <= 0; dn.disabled = k >= shown.length - 1;
+      up.addEventListener("click", () => moveItem(g.id, its, it.id, shown[k - 1].id));
+      dn.addEventListener("click", () => moveItem(g.id, its, it.id, shown[k + 1].id));
+      acts.append(up, dn);
+    }
     acts.append(e, x);
     li.append(cb, lab, acts);
     if (it.note) li.appendChild(el("div", "note", it.note));
@@ -629,12 +664,23 @@ function renderGroup(g, its, d, gi, pi, peers){
   if (ul.children.length) s.appendChild(ul);
   else if (view === "todo" && its.length && d === its.length) s.appendChild(el("p", "empty alldone", "Tout est fait ici ✓ — voir dans « Fait »"));
   else s.appendChild(el("p", "empty", its.length ? "Rien ici avec ce filtre." : C.emptyGroup));
-  if (view === "todo") {
+  if (view === "todo" && !Q) {
     const add = btn("addhere", "+ Ajouter " + C.itemWordArt, "Ajouter dans " + g.t);
     add.addEventListener("click", () => openItemModal(null, g.id));
     s.appendChild(add);
   }
   return s;
+}
+function sortItems(gid, its){
+  const o = state.iorder[gid]; if (!o || !o.length) return its;
+  const pos = new Map(o.map((id, i) => [id, i])), base = new Map(its.map((it, i) => [it.id, i]));
+  return its.slice().sort((a, b) => (pos.has(a.id) ? pos.get(a.id) : 1e6 + base.get(a.id)) - (pos.has(b.id) ? pos.get(b.id) : 1e6 + base.get(b.id)));
+}
+function moveItem(gid, its, id, otherId){
+  const ids = its.map(it => it.id), a = ids.indexOf(id), b = ids.indexOf(otherId);
+  if (a < 0 || b < 0) return;
+  ids[a] = otherId; ids[b] = id; state.iorder[gid] = ids; commit();
+  requestAnimationFrame(() => { const n = document.querySelector('li.item[data-id="' + CSS.escape(id) + '"]'); if (n) { n.classList.add("moved"); n.scrollIntoView({ block:"nearest", behavior:"smooth" }); const f = n.querySelector(".mv" + (b < a ? ".up" : ".dn")); if (f && !f.disabled) f.focus({ preventScroll:true }); } });
 }
 function move(id, peers, dir){
   const ids = groups().map(g => g.id);
@@ -645,6 +691,14 @@ function move(id, peers, dir){
   state.order = ids; commit();
   requestAnimationFrame(() => { const n = document.querySelector('section[data-g="' + CSS.escape(id) + '"]'); if (n) { n.classList.add("moved"); n.scrollIntoView({ block:"nearest", behavior:"smooth" }); } });
 }
+(function(){ /* délégation : la page peut être insérée après le chargement du script */
+  let t = null;
+  const q = () => document.getElementById("q");
+  const go = () => { const i = q(); if (!i) return; Q = i.value.trim(); const c = document.getElementById("qclr"); if (c) c.hidden = !Q; render(); };
+  document.addEventListener("input", e => { if (e.target && e.target.id === "q") { clearTimeout(t); t = setTimeout(go, 120); } });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && e.target && e.target.id === "q") { e.target.value = ""; go(); } });
+  document.addEventListener("click", e => { if (e.target && e.target.id === "qclr") { const i = q(); i.value = ""; go(); i.focus(); } });
+})();
 function renderFilters(G){
   const box = $("#filters"); box.innerHTML = "";
   const seg = el("div", "viewseg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", "À faire ou fait");
