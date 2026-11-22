@@ -322,7 +322,7 @@ const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 
 let items = new Map(), mode='loading', readOnly=false, sorting=false, curTm='', curP='', chan=null;
 const st = {cat:'all', who:'all', status:'todo', q:'', upf:'all'};
-try{ const u=JSON.parse(localStorage.getItem(LS+'-ui')||'{}'); ['who','status'].forEach(k=>{ if(u[k]) st[k]=u[k]; }); }catch(e){}
+try{ localStorage.removeItem(LS+'-ui'); }catch(e){} /* rien n'est mémorisé : on rouvre toujours sur Tout · Les deux · À voir */
 
 /* ---------- stockage (Supabase) ---------- */
 function clean(o){
@@ -582,7 +582,6 @@ function recentHtml(){
 
 /* ---------- render ---------- */
 function render(){
-  try{ localStorage.setItem(LS+'-ui', JSON.stringify({cat:st.cat,who:st.who,status:st.status,upf:st.upf})); }catch(e){}
   if(!canSort()) sorting=false;
   document.body.classList.toggle('sorting',sorting);
   const cnt={all:0,up:0};

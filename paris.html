@@ -511,10 +511,11 @@ function openImport(){
 }
 
 /* ---------- Filtres (préférence de chaque personne) ---------- */
-let ui = Object.assign({ f:"all", g:"all" }, LS.get(UIKEY) || {});
+let ui = { f:"all", g:"all" }; /* rien n'est mémorisé : on rouvre toujours sur la vue de base */
+try { localStorage.removeItem(UIKEY); } catch(e) {}
 if (!C.filters.some(f => f.id === ui.f)) ui.f = "all";
 let view = "todo"; /* "todo" | "done" — remis à « À faire » à chaque ouverture */
-const saveUI = () => LS.set(UIKEY, ui);
+const saveUI = () => {};
 
 /* ---------- Rendu ---------- */
 let justId = null;
