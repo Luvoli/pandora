@@ -816,7 +816,7 @@ function searchTMDB(raw){
 function findDup(tm,se,t,exceptId){ const k=snorm(t);
   for(const [id,o] of items){ if(id===exceptId) continue;
     if(tm&&o.tm===tm&&(o.se||0)===(se||0)) return o;
-    if(k&&snorm(o.t)===k) return o; }
+    if(k&&snorm(o.t)===k&&!(tm&&o.tm&&o.tm!==tm)) return o; } // même titre mais autre fiche TMDB (ex. La Petite Sirène 1989 / 2023) : pas un doublon
   return null; }
 function ownedTm(r){ const tm=(r.media_type==='tv'?'t':'m')+r.id; return [...items.values()].find(o=>o.tm===tm&&!(o.se>0)); }
 function resBtn(r,k,src){
