@@ -574,7 +574,7 @@ const FOLDED=new Set();
 /* ---------- sorties à venir : frise et mois ---------- */
 function monthLabel(iso){ if(iso.length===4) return iso+' · mois à préciser'; const [y,m]=iso.split('-').map(Number); const t=new Date(y,m-1,1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}); return t.charAt(0).toUpperCase()+t.slice(1); }
 function stripHtml(){
-  const up=[...items.entries()].filter(([,o])=>UP(o.c)&&!o.v&&whoOk(o)&&(!o.d||fullD(o.d)>=today())).sort((a,b)=>{ const x=!a[1].d?'9999':a[1].d.length===4?a[1].d+'-13':a[1].d, y=!b[1].d?'9999':b[1].d.length===4?b[1].d+'-13':b[1].d; return x<y?-1:x>y?1:0; });
+  const up=[...items.entries()].filter(([,o])=>UP(o.c)&&!o.v&&whoOk(o)&&(!o.d||fullD(o.d)>today())).sort((a,b)=>{ const x=!a[1].d?'9999':a[1].d.length===4?a[1].d+'-13':a[1].d, y=!b[1].d?'9999':b[1].d.length===4?b[1].d+'-13':b[1].d; return x<y?-1:x>y?1:0; });
   if(!up.length) return '';
   return `<div class="strip-h"><span>Prochaines sorties</span><button data-goup>Tout voir ›</button></div><div class="stripw"><button class="sarr l" data-sarr="-1" aria-label="Défiler vers la gauche" hidden>‹</button><button class="sarr r" data-sarr="1" aria-label="Défiler vers la droite">›</button><div class="strip">`+up.map(([id,o])=>{
     let cd; if(!o.d) cd='date à venir'; else { const di=dinfo(o.d); cd=di.out?(di.rel==='aujourd’hui'?'aujourd’hui':'sorti'):di.rel.replace('dans ','dans ').replace(' jours',' j'); }
@@ -589,7 +589,7 @@ function recentHtml(){
   if(!rec.length) return '';
   const lab=d=>{ const n=Math.round((new Date(t)-new Date(d))/864e5); return n===0?'aujourd’hui':n===1?'hier':'il y a '+n+' j'; };
   return `<div class="strip-h small"><span>Sorties récentes</span></div><div class="stripw"><button class="sarr l" data-sarr="-1" aria-label="Défiler vers la gauche" hidden>‹</button><button class="sarr r" data-sarr="1" aria-label="Défiler vers la droite">›</button><div class="strip sm">`+rec.map(([id,o])=>{
-    const ld=dinfo(leaveDate(o)), where=(o.c==='cine'?'au ciné':'en streaming')+' · jusqu’au '+ld.day+' '+ld.mon;
+    const where=o.c==='cine'?'au ciné':'en streaming';
     return `<button class="sc sm" data-goto="${id}">${o.p?`<img src="https://image.tmdb.org/t/p/w185${o.p}" alt="" loading="lazy">`:`<span class="ph">${esc((o.t||'?').charAt(0))}</span>`}<span class="cd new">${lab(o.d)}</span><b>${esc(o.t)}</b><small>${esc(where)}</small></button>`; }).join('')+`</div></div>`;
 }
 
